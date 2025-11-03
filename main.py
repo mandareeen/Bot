@@ -1,46 +1,33 @@
+from aiogram import Bot, Dispatcher, types
+from aiogram.types import Update
+from aiogram.utils.executor import start_webhook
 import os
-from aiohttp import web
-from aiogram import Bot, Dispatcher
-from aiogram.types import Message
-from aiogram.filters import Command
 
-# Получаем токен из переменных среды
-API_TOKEN = os.getenv("BOT_TOKEN")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+WEBHOOK_PATH = f"/webhook/{BOT_TOKEN}"
+WEBHOOK_URL = f"https://your-render-subdomain.onrender.com{WEBHOOK_PATH}"
 
-if not API_TOKEN:
-    raise ValueError("BOT_TOKEN не задан!")
-
-bot = Bot(token=API_TOKEN)
+bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# Пример хэндлера /start
-@dp.message(Command("start"))
-async def cmd_start(message: Message):
-    await message.answer("Бот работает!")
+# Пример команды
+@dp.message()
+async def echo(message: types.Message):
+    await message.answer(f"Вы написали: {message.text}")
 
-# --- aiohttp сервер для Render ---
-async def handle(request):
-    return web.Response(text="Bot is running!")
+async def on_startup():
+    await bot.set_webhook(WEBHOOK_URL)
 
-async def on_startup(app):
-    # можно запускать background polling
-    from aiogram import F
-    import asyncio
+async def on_shutdown():
+    await bot.delete_webhook()
 
-    async def polling():
-        await dp.start_polling(bot)
+if __name__ == "__main__":
+    start_webhook(
+        dispatcher=dp,
+        webhook_path=WEBHOOK_PATH,
+        on_startup=on_startup,
+        on_shutdown=on_shutdown,
+        host="0.0.0.0",
+        port=int(os.environ.get("PORT", 10000)),  # Render использует переменную PORT
+    )
 
-    app["polling_task"] = asyncio.create_task(polling())
-
-async def on_cleanup(app):
-    app["polling_task"].cancel()
-    await bot.session.close()
-
-app = web.Application()
-app.router.add_get("/", handle)
-app.on_startup.append(on_startup)
-app.on_cleanup.append(on_cleanup)
-
-# Render назначает порт через переменную среды PORT
-port = int(os.getenv("PORT", 8000))
-web.run_app(app, port=port)
