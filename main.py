@@ -1,25 +1,46 @@
-import asyncio
 import os
-from aiogram import Bot, Dispatcher, types
-from dotenv import load_dotenv
+from aiohttp import web
+from aiogram import Bot, Dispatcher
+from aiogram.types import Message
+from aiogram.filters import Command
 
-load_dotenv()
-
+# Получаем токен из переменных среды
 API_TOKEN = os.getenv("BOT_TOKEN")
+
+if not API_TOKEN:
+    raise ValueError("BOT_TOKEN не задан!")
+
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
 
-# Хэндлер для команды /start
-@dp.message()
-async def start(message: types.Message):
-    await message.reply("✅ Бот работает! Привет!")
+# Пример хэндлера /start
+@dp.message(Command("start"))
+async def cmd_start(message: Message):
+    await message.answer("Бот работает!")
 
-async def main():
-    try:
-        # Запуск бота
+# --- aiohttp сервер для Render ---
+async def handle(request):
+    return web.Response(text="Bot is running!")
+
+async def on_startup(app):
+    # можно запускать background polling
+    from aiogram import F
+    import asyncio
+
+    async def polling():
         await dp.start_polling(bot)
-    finally:
-        await bot.session.close()
 
-if __name__ == "__main__":
-    asyncio.run(main())
+    app["polling_task"] = asyncio.create_task(polling())
+
+async def on_cleanup(app):
+    app["polling_task"].cancel()
+    await bot.session.close()
+
+app = web.Application()
+app.router.add_get("/", handle)
+app.on_startup.append(on_startup)
+app.on_cleanup.append(on_cleanup)
+
+# Render назначает порт через переменную среды PORT
+port = int(os.getenv("PORT", 8000))
+web.run_app(app, port=port)
